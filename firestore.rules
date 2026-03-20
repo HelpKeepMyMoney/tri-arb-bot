@@ -1,0 +1,59 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    //
+    // Collection: arbitrage_hits
+    // Document ID: auto-generated
+    // Fields:
+    //   - profit: number (required) - Absolute profit in BTC
+    //   - profitPercent: number (required) - Profit percentage
+    //   - timestamp: string (required, ISO 8601) - Time of hit
+    //   - details: map (optional) - Detailed trade info
+    //
+    // ===============================================================
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isAdmin() {
+      return isAuthenticated() &&
+        (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
+          (request.auth.token.email == "helpkeepmymoney@gmail.com" && request.auth.token.email_verified == true));
+    }
+
+    function isValidHit(data) {
+      return data.profit is number &&
+             data.profitPercent is number &&
+             data.timestamp is string &&
+             data.timestamp.matches("^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}.*Z?$");
+    }
+
+    // ===============================================================
+    // Rules
+    // ===============================================================
+
+    match /arbitrage_hits/{hitId} {
+      // Only authenticated users can read the hits
+      allow read: if isAuthenticated();
+      
+      // Only admins (or the server-side bot if using admin SDK) can create hits
+      // If the server uses the modular SDK, it needs to be authenticated as an admin
+      allow create: if isAdmin() && isValidHit(request.resource.data);
+      
+      // Hits are immutable
+      allow update, delete: if false;
+    }
+
+    match /users/{userId} {
+      allow read: if isAuthenticated() && request.auth.uid == userId;
+      allow write: if isAdmin();
+    }
+  }
+}

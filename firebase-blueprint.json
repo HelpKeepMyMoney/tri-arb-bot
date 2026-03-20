@@ -1,0 +1,48 @@
+{
+  "entities": {
+    "ArbitrageHit": {
+      "title": "Arbitrage Hit",
+      "description": "A successful arbitrage opportunity detected by the bot.",
+      "type": "object",
+      "properties": {
+        "profit": {
+          "type": "number",
+          "description": "Absolute profit in BTC."
+        },
+        "profitPercent": {
+          "type": "number",
+          "description": "Profit percentage."
+        },
+        "timestamp": {
+          "type": "string",
+          "format": "date-time",
+          "description": "ISO 8601 timestamp of the hit."
+        },
+        "details": {
+          "type": "object",
+          "properties": {
+            "initial": { "type": "number" },
+            "eth": { "type": "number" },
+            "usdt": { "type": "number" },
+            "final": { "type": "number" },
+            "prices": {
+              "type": "object",
+              "properties": {
+                "ETH/BTC": { "type": "number" },
+                "ETH/USDT": { "type": "number" },
+                "BTC/USDT": { "type": "number" }
+              }
+            }
+          }
+        }
+      },
+      "required": ["profit", "profitPercent", "timestamp"]
+    }
+  },
+  "firestore": {
+    "/arbitrage_hits/{hitId}": {
+      "schema": "ArbitrageHit",
+      "description": "Collection of all successful arbitrage hits."
+    }
+  }
+}

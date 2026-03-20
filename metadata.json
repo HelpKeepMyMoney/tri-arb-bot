@@ -1,0 +1,5 @@
+{
+  "name": "Triangle Arbitrage Bot",
+  "description": "A real-time cryptocurrency triangle arbitrage bot that monitors price inefficiencies across three trading pairs on a single exchange.",
+  "requestFramePermissions": []
+}
