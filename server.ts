@@ -223,16 +223,15 @@ async function startServer() {
           addLog(`Unauthorized toggle attempt by ${decodedToken.email}`, "error");
         }
       } catch (error: any) {
-        let errorMessage = "Authentication failed.";
-        if (error.code === 'auth/id-token-expired') {
-          errorMessage = "Session expired. Please sign out and sign back in.";
-        } else if (error.code === 'auth/argument-error') {
-          errorMessage = "Invalid security token. Try refreshing the page.";
-        }
+        console.error("Auth error in toggle_bot:", error.code, error.message);
+        
+        // Send the specific error code to the client for debugging
+        const errorMessage = error.code 
+          ? `Authentication failed (${error.code}): ${error.message}` 
+          : "Authentication failed. Please check server logs.";
         
         socket.emit("error", errorMessage);
-        console.error("Auth error in toggle_bot:", error.code, error.message);
-        addLog(`Auth error (${error.code}): ${error.message}`, "error");
+        addLog(`Auth error: ${error.code || 'unknown'}`, "error");
       }
     });
   });
