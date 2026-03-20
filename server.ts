@@ -127,7 +127,7 @@ async function startServer() {
       }
 
       if (shouldUpdateUI) {
-        io.emit("ticker_update", currentPrices);
+        // We skip the simple emission here because the full one below is better
       }
 
       // 1. Start with 1 BTC

@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { useState, useEffect, useRef, Component, ReactNode, useCallback, useMemo } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { io, Socket } from 'socket.io-client';
 import { 
   TrendingUp, 
@@ -77,12 +77,63 @@ interface TickerUpdate {
 }
 
 interface ErrorBoundaryProps {
-  children: ReactNode;
+  children: React.ReactNode;
 }
 
 interface ErrorBoundaryState {
   hasError: boolean;
   error: any;
+}
+
+class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundaryState> {
+  override state: ErrorBoundaryState = { hasError: false, error: null };
+
+  constructor(props: ErrorBoundaryProps) {
+    super(props);
+  }
+
+  static getDerivedStateFromError(error: any) {
+    return { hasError: true, error };
+  }
+
+  componentDidCatch(error: any, errorInfo: any) {
+    console.error("ErrorBoundary caught an error", error, errorInfo);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="min-h-screen bg-[#0a0a0a] flex items-center justify-center p-6 text-center">
+          <div className="max-w-md space-y-4">
+            <AlertCircle className="w-12 h-12 text-red-500 mx-auto" />
+            <h1 className="text-xl font-bold text-white">Something went wrong</h1>
+            <p className="text-zinc-400 text-sm">
+              The application encountered an error. This might be due to a lack of browser storage space or a temporary connection issue.
+            </p>
+            <pre className="p-4 bg-black rounded-lg text-xs text-red-400 overflow-auto max-h-40 text-left">
+              {this.state.error?.message || String(this.state.error)}
+            </pre>
+            <button 
+              onClick={() => window.location.reload()}
+              className="px-6 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg transition-colors font-medium"
+            >
+              Reload Application
+            </button>
+          </div>
+        </div>
+      );
+    }
+
+    return this.props.children;
+  }
+}
+
+function App() {
+  return (
+    <ErrorBoundary>
+      <Dashboard />
+    </ErrorBoundary>
+  );
 }
 
 // Memoized sub-components for performance
@@ -113,7 +164,9 @@ const LogItem = React.memo(({ log }: { log: Log }) => {
 
   return (
     <div className="flex gap-3 text-[11px] group">
-      <span className="text-zinc-600 font-mono shrink-0">{new Date(log.timestamp).toLocaleTimeString([], { hour12: false })}</span>
+      <span className="text-zinc-600 font-mono shrink-0">
+        {log.timestamp ? new Date(log.timestamp).toLocaleTimeString([], { hour12: false }) : '--:--:--'}
+      </span>
       <div className="mt-0.5 shrink-0">{icon}</div>
       <span className={`break-words ${log.type === 'error' ? 'text-red-400' : log.type === 'success' ? 'text-emerald-400' : 'text-zinc-300'}`}>
         {log.message}
@@ -129,7 +182,7 @@ const TradeRow = React.memo(({ trade, onSimulate }: { trade: Opportunity; onSimu
     className="group hover:bg-white/[0.02] transition-colors"
   >
     <td className="py-4 text-xs font-mono text-zinc-400">
-      {new Date(trade.timestamp).toLocaleTimeString()}
+      {trade.timestamp ? new Date(trade.timestamp).toLocaleTimeString() : 'N/A'}
     </td>
     <td className="py-4 text-xs text-center">
       <span className="px-2 py-0.5 rounded bg-zinc-800 text-zinc-400 border border-white/5">BTC → ETH → USDT → BTC</span>
@@ -188,11 +241,13 @@ function Dashboard() {
 
     socket.on('ticker_update', (data: TickerUpdate) => {
       setTickerData(data.pairs);
-      setOpportunity(data.opportunity);
-      setHistory(prev => [...prev, {
-        time: new Date(data.opportunity.timestamp).toLocaleTimeString(),
-        profit: data.opportunity.profitPercent
-      }].slice(-30));
+      if (data.opportunity) {
+        setOpportunity(data.opportunity);
+        setHistory(prev => [...prev, {
+          time: data.opportunity.timestamp ? new Date(data.opportunity.timestamp).toLocaleTimeString() : new Date().toLocaleTimeString(),
+          profit: data.opportunity.profitPercent
+        }].slice(-30));
+      }
     });
 
     return () => {
@@ -631,12 +686,6 @@ function Dashboard() {
         }
       `}</style>
     </div>
-  );
-}
-
-function App() {
-  return (
-    <Dashboard />
   );
 }
 
