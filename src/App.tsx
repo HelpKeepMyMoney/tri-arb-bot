@@ -231,7 +231,22 @@ function Dashboard() {
   const [selectedSimulationTrade, setSelectedSimulationTrade] = useState<Opportunity | null>(null);
   const [simulationAmount, setSimulationAmount] = useState<number>(0.1); // Default 0.1 BTC
   const [storageError, setStorageError] = useState<string | null>(null);
+  const [isMounted, setIsMounted] = useState(false);
   const socketRef = useRef<Socket | null>(null);
+
+  useEffect(() => {
+    setIsMounted(true);
+    const handleUnhandledRejection = (event: PromiseRejectionEvent) => {
+      if (event.reason?.message?.includes('FILE_ERROR_NO_SPACE') || 
+          String(event.reason).includes('FILE_ERROR_NO_SPACE')) {
+        setStorageError('Browser storage is full. This is a local issue on your device that may prevent some features from working.');
+        event.preventDefault();
+      }
+    };
+
+    window.addEventListener('unhandledrejection', handleUnhandledRejection);
+    return () => window.removeEventListener('unhandledrejection', handleUnhandledRejection);
+  }, []);
 
   useEffect(() => {
     // Check for storage availability
@@ -239,7 +254,7 @@ function Dashboard() {
       try {
         if ('storage' in navigator && 'estimate' in navigator.storage) {
           const { usage, quota } = await navigator.storage.estimate();
-          if (usage && quota && usage > quota * 0.9) {
+          if (usage !== undefined && quota !== undefined && usage > quota * 0.9) {
             setStorageError('Browser storage is almost full. This may cause issues with the application.');
           }
         }
@@ -316,7 +331,10 @@ function Dashboard() {
   const handleLogin = useCallback(async () => {
     try {
       await signInWithPopup(auth, googleProvider);
-    } catch (error) {
+    } catch (error: any) {
+      if (error.message?.includes('FILE_ERROR_NO_SPACE') || String(error).includes('FILE_ERROR_NO_SPACE')) {
+        setStorageError('Login failed: Browser storage is full. Please clear space to sign in.');
+      }
       console.error("Login failed:", error);
     }
   }, []);
@@ -448,45 +466,47 @@ function Dashboard() {
               </div>
             </div>
             
-            <div className="h-[300px] w-full">
-              <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
-                <AreaChart data={memoizedHistory}>
-                  <defs>
-                    <linearGradient id="colorProfit" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#10b981" stopOpacity={0.3}/>
-                      <stop offset="95%" stopColor="#10b981" stopOpacity={0}/>
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#ffffff05" vertical={false} />
-                  <XAxis 
-                    dataKey="time" 
-                    stroke="#52525b" 
-                    fontSize={10} 
-                    tickLine={false} 
-                    axisLine={false} 
-                  />
-                  <YAxis 
-                    stroke="#52525b" 
-                    fontSize={10} 
-                    tickLine={false} 
-                    axisLine={false} 
-                    tickFormatter={(val) => `${val.toFixed(2)}%`}
-                  />
-                  <Tooltip 
-                    contentStyle={{ backgroundColor: '#18181b', border: '1px solid #ffffff10', borderRadius: '8px' }}
-                    itemStyle={{ color: '#10b981' }}
-                  />
-                  <Area 
-                    type="monotone" 
-                    dataKey="profit" 
-                    stroke="#10b981" 
-                    fillOpacity={1} 
-                    fill="url(#colorProfit)" 
-                    strokeWidth={2}
-                    isAnimationActive={false}
-                  />
-                </AreaChart>
-              </ResponsiveContainer>
+            <div className="h-[300px] w-full relative">
+              {isMounted && (
+                <ResponsiveContainer width="100%" height="100%" minWidth={100} minHeight={100} debounce={100}>
+                  <AreaChart data={memoizedHistory}>
+                    <defs>
+                      <linearGradient id="colorProfit" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="#10b981" stopOpacity={0.3}/>
+                        <stop offset="95%" stopColor="#10b981" stopOpacity={0}/>
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#ffffff05" vertical={false} />
+                    <XAxis 
+                      dataKey="time" 
+                      stroke="#52525b" 
+                      fontSize={10} 
+                      tickLine={false} 
+                      axisLine={false} 
+                    />
+                    <YAxis 
+                      stroke="#52525b" 
+                      fontSize={10} 
+                      tickLine={false} 
+                      axisLine={false} 
+                      tickFormatter={(val) => `${val.toFixed(2)}%`}
+                    />
+                    <Tooltip 
+                      contentStyle={{ backgroundColor: '#18181b', border: '1px solid #ffffff10', borderRadius: '8px' }}
+                      itemStyle={{ color: '#10b981' }}
+                    />
+                    <Area 
+                      type="monotone" 
+                      dataKey="profit" 
+                      stroke="#10b981" 
+                      fillOpacity={1} 
+                      fill="url(#colorProfit)" 
+                      strokeWidth={2}
+                      isAnimationActive={false}
+                    />
+                  </AreaChart>
+                </ResponsiveContainer>
+              )}
             </div>
           </div>
 
