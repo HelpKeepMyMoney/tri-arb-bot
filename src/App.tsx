@@ -102,23 +102,37 @@ class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundarySta
 
   render() {
     if (this.state.hasError) {
+      const isStorageError = this.state.error?.message?.includes('FILE_ERROR_NO_SPACE') || 
+                            String(this.state.error).includes('FILE_ERROR_NO_SPACE');
+
       return (
         <div className="min-h-screen bg-[#0a0a0a] flex items-center justify-center p-6 text-center">
           <div className="max-w-md space-y-4">
             <AlertCircle className="w-12 h-12 text-red-500 mx-auto" />
-            <h1 className="text-xl font-bold text-white">Something went wrong</h1>
+            <h1 className="text-xl font-bold text-white">
+              {isStorageError ? 'Storage Space Required' : 'Something went wrong'}
+            </h1>
             <p className="text-zinc-400 text-sm">
-              The application encountered an error. This might be due to a lack of browser storage space or a temporary connection issue.
+              {isStorageError 
+                ? 'Your browser storage is full. Please clear some space or close other tabs to continue using the application.'
+                : 'The application encountered an error. This might be due to a lack of browser storage space or a temporary connection issue.'}
             </p>
             <pre className="p-4 bg-black rounded-lg text-xs text-red-400 overflow-auto max-h-40 text-left">
               {this.state.error?.message || String(this.state.error)}
             </pre>
-            <button 
-              onClick={() => window.location.reload()}
-              className="px-6 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg transition-colors font-medium"
-            >
-              Reload Application
-            </button>
+            <div className="flex flex-col gap-2">
+              <button 
+                onClick={() => window.location.reload()}
+                className="px-6 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg transition-colors font-medium"
+              >
+                Reload Application
+              </button>
+              {isStorageError && (
+                <p className="text-[10px] text-zinc-500">
+                  Tip: Try clearing your browser cache or deleting old data from your disk.
+                </p>
+              )}
+            </div>
           </div>
         </div>
       );
@@ -216,7 +230,25 @@ function Dashboard() {
   const [history, setHistory] = useState<any[]>([]);
   const [selectedSimulationTrade, setSelectedSimulationTrade] = useState<Opportunity | null>(null);
   const [simulationAmount, setSimulationAmount] = useState<number>(0.1); // Default 0.1 BTC
+  const [storageError, setStorageError] = useState<string | null>(null);
   const socketRef = useRef<Socket | null>(null);
+
+  useEffect(() => {
+    // Check for storage availability
+    const checkStorage = async () => {
+      try {
+        if ('storage' in navigator && 'estimate' in navigator.storage) {
+          const { usage, quota } = await navigator.storage.estimate();
+          if (usage && quota && usage > quota * 0.9) {
+            setStorageError('Browser storage is almost full. This may cause issues with the application.');
+          }
+        }
+      } catch (e) {
+        console.warn('Storage estimate failed', e);
+      }
+    };
+    checkStorage();
+  }, []);
 
   useEffect(() => {
     const unsubscribeAuth = onAuthStateChanged(auth, (user) => {
@@ -387,6 +419,13 @@ function Dashboard() {
         {/* Left Column: Stats & Triangle */}
         <div className="lg:col-span-2 space-y-6">
           
+          {storageError && (
+            <div className="bg-amber-500/10 border border-amber-500/20 rounded-2xl p-4 flex items-center gap-3 text-amber-400 text-sm">
+              <AlertCircle className="w-5 h-5 shrink-0" />
+              <p>{storageError}</p>
+            </div>
+          )}
+          
           {/* Real-time Triangle View */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <TickerCard pair="ETH/BTC" data={memoizedTickerData['ETH/BTC']} />
@@ -410,7 +449,7 @@ function Dashboard() {
             </div>
             
             <div className="h-[300px] w-full">
-              <ResponsiveContainer width="100%" height="100%">
+              <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
                 <AreaChart data={memoizedHistory}>
                   <defs>
                     <linearGradient id="colorProfit" x1="0" y1="0" x2="0" y2="1">
