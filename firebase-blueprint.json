@@ -37,12 +37,27 @@
         }
       },
       "required": ["profit", "profitPercent", "timestamp"]
+    },
+    "User": {
+      "title": "User",
+      "description": "A user of the application with a specific role.",
+      "type": "object",
+      "properties": {
+        "email": { "type": "string" },
+        "role": { "type": "string", "enum": ["admin", "viewer"] },
+        "displayName": { "type": "string" }
+      },
+      "required": ["email", "role"]
     }
   },
   "firestore": {
     "/arbitrage_hits/{hitId}": {
       "schema": "ArbitrageHit",
       "description": "Collection of all successful arbitrage hits."
+    },
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "Collection of all users and their roles."
     }
   }
 }

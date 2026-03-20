@@ -9,8 +9,6 @@ import {
   History, 
   Settings, 
   ArrowRightLeft,
-  AlertCircle,
-  CheckCircle2,
   Info,
   LogIn,
   LogOut,
@@ -18,7 +16,10 @@ import {
   Zap,
   Calculator,
   X,
-  ChevronRight
+  ChevronRight,
+  Mail,
+  CheckCircle2,
+  AlertCircle
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
@@ -42,7 +43,13 @@ import {
   onSnapshot, 
   query, 
   orderBy, 
-  limit 
+  limit,
+  doc,
+  getDoc,
+  setDoc,
+  sendSignInLinkToEmail,
+  isSignInWithEmailLink,
+  signInWithEmailLink
 } from './firebase';
 
 interface Log {
@@ -221,6 +228,12 @@ const TradeRow = React.memo(({ trade, onSimulate }: { trade: Opportunity; onSimu
 // Dashboard component starts here
 function Dashboard() {
   const [user, setUser] = useState<any>(null);
+  const [userRole, setUserRole] = useState<string | null>(null);
+  const [authReady, setAuthReady] = useState(false);
+  const [email, setEmail] = useState('');
+  const [isSendingLink, setIsSendingLink] = useState(false);
+  const [linkSent, setLinkSent] = useState(false);
+  const [emailError, setEmailError] = useState<string | null>(null);
   const [isBotRunning, setIsBotRunning] = useState(false);
   const [hasApiKeys, setHasApiKeys] = useState(false);
   const [logs, setLogs] = useState<Log[]>([]);
@@ -266,10 +279,61 @@ function Dashboard() {
   }, []);
 
   useEffect(() => {
-    const unsubscribeAuth = onAuthStateChanged(auth, (user) => {
+    // Check for email link sign-in
+    if (isSignInWithEmailLink(auth, window.location.href)) {
+      let emailForSignIn = window.localStorage.getItem('emailForSignIn');
+      if (!emailForSignIn) {
+        emailForSignIn = window.prompt('Please provide your email for confirmation');
+      }
+      if (emailForSignIn) {
+        signInWithEmailLink(auth, emailForSignIn, window.location.href)
+          .then(() => {
+            window.localStorage.removeItem('emailForSignIn');
+            // Remove the query params from URL
+            window.history.replaceState({}, '', window.location.pathname);
+          })
+          .catch((error) => {
+            console.error("Error signing in with email link:", error);
+            setEmailError("Failed to sign in. The link may have expired.");
+          });
+      }
+    }
+
+    const unsubscribeAuth = onAuthStateChanged(auth, async (user) => {
       setUser(user);
+      if (user) {
+        // Fetch or create user document
+        try {
+          const userDocRef = doc(db, 'users', user.uid);
+          const userDoc = await getDoc(userDocRef);
+          
+          if (userDoc.exists()) {
+            setUserRole(userDoc.data().role);
+          } else {
+            // Default admin check
+            const role = user.email === 'helpkeepmymoney@gmail.com' ? 'admin' : 'viewer';
+            await setDoc(userDocRef, {
+              email: user.email,
+              displayName: user.displayName || user.email?.split('@')[0] || 'User',
+              role: role,
+              createdAt: new Date().toISOString()
+            });
+            setUserRole(role);
+          }
+        } catch (error) {
+          console.error("Error fetching user role:", error);
+          setUserRole('viewer'); // Fallback
+        }
+      } else {
+        setUserRole(null);
+      }
+      setAuthReady(true);
     });
 
+    return () => unsubscribeAuth();
+  }, []);
+
+  useEffect(() => {
     const socket = io();
     socketRef.current = socket;
 
@@ -298,7 +362,6 @@ function Dashboard() {
     });
 
     return () => {
-      unsubscribeAuth();
       socket.disconnect();
     };
   }, []);
@@ -324,9 +387,15 @@ function Dashboard() {
     return () => unsubscribe();
   }, [user]);
 
-  const toggleBot = useCallback(() => {
-    socketRef.current?.emit('toggle_bot', !isBotRunning);
-  }, [isBotRunning]);
+  const toggleBot = useCallback(async () => {
+    if (!user) return;
+    try {
+      const token = await user.getIdToken();
+      socketRef.current?.emit('toggle_bot', { status: !isBotRunning, token });
+    } catch (error) {
+      console.error("Failed to toggle bot:", error);
+    }
+  }, [isBotRunning, user]);
 
   const handleLogin = useCallback(async () => {
     try {
@@ -341,12 +410,47 @@ function Dashboard() {
 
   const handleLogout = useCallback(() => auth.signOut(), []);
 
+  const handleEmailLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!email) return;
+    
+    setIsSendingLink(true);
+    setEmailError(null);
+    
+    try {
+      const actionCodeSettings = {
+        url: window.location.href,
+        handleCodeInApp: true,
+      };
+      
+      await sendSignInLinkToEmail(auth, email, actionCodeSettings);
+      window.localStorage.setItem('emailForSignIn', email);
+      setLinkSent(true);
+    } catch (error: any) {
+      console.error("Error sending email link:", error);
+      setEmailError(error.message || "Failed to send login link. Please try again.");
+    } finally {
+      setIsSendingLink(false);
+    }
+  };
+
   const closeSimulationModal = useCallback(() => setSelectedSimulationTrade(null), []);
 
   const memoizedHistory = useMemo(() => history, [history]);
   const memoizedTradesHistory = useMemo(() => tradesHistory, [tradesHistory]);
   const memoizedLogs = useMemo(() => logs, [logs]);
   const memoizedTickerData = useMemo(() => tickerData, [tickerData]);
+
+  if (!authReady) {
+    return (
+      <div className="min-h-screen bg-[#0a0a0a] flex items-center justify-center">
+        <div className="flex flex-col items-center gap-4">
+          <div className="w-12 h-12 border-2 border-emerald-500/20 border-t-emerald-500 rounded-full animate-spin" />
+          <div className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest">Initializing Secure Session...</div>
+        </div>
+      </div>
+    );
+  }
 
   if (!user) {
     return (
@@ -361,15 +465,82 @@ function Dashboard() {
           </div>
           <div>
             <h1 className="text-2xl font-bold text-white mb-2">TriArb Pro</h1>
-            <p className="text-zinc-400 text-sm">Secure Triangle Arbitrage Monitoring & Execution. Please sign in to access the dashboard.</p>
+            <p className="text-zinc-400 text-sm">Secure Triangle Arbitrage Monitoring & Execution.</p>
           </div>
-          <button 
-            onClick={handleLogin}
-            className="w-full flex items-center justify-center gap-3 py-4 bg-white text-black rounded-2xl font-bold hover:bg-zinc-200 transition-all active:scale-95"
-          >
-            <LogIn className="w-5 h-5" />
-            Sign in with Google
-          </button>
+
+          {linkSent ? (
+            <div className="space-y-4 p-6 bg-emerald-500/10 border border-emerald-500/20 rounded-2xl">
+              <CheckCircle2 className="w-10 h-10 text-emerald-500 mx-auto" />
+              <h2 className="text-lg font-bold text-white">Check your email</h2>
+              <p className="text-zinc-400 text-sm">We've sent a login link to <strong>{email}</strong>. Click the link in your inbox to sign in.</p>
+              <button 
+                onClick={() => setLinkSent(false)}
+                className="text-xs text-zinc-500 hover:text-white transition-colors underline"
+              >
+                Try a different email
+              </button>
+            </div>
+          ) : (
+            <div className="space-y-6">
+              <form onSubmit={handleEmailLogin} className="space-y-4">
+                <div className="space-y-2 text-left">
+                  <label className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest ml-1">Email Address</label>
+                  <div className="relative">
+                    <Mail className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500" />
+                    <input 
+                      type="email"
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      placeholder="name@example.com"
+                      required
+                      className="w-full bg-black/40 border border-white/10 rounded-2xl py-4 pl-12 pr-4 text-sm focus:outline-none focus:border-emerald-500/50 transition-colors"
+                    />
+                  </div>
+                </div>
+                {emailError && (
+                  <div className="flex items-center gap-2 p-3 bg-red-500/10 border border-red-500/20 rounded-xl text-[11px] text-red-400">
+                    <AlertCircle className="w-3 h-3 shrink-0" />
+                    {emailError}
+                  </div>
+                )}
+                <button 
+                  type="submit"
+                  disabled={isSendingLink}
+                  className="w-full py-4 bg-emerald-500 text-black rounded-2xl font-bold hover:bg-emerald-400 transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                >
+                  {isSendingLink ? (
+                    <div className="w-5 h-5 border-2 border-black/20 border-t-black rounded-full animate-spin" />
+                  ) : (
+                    <>
+                      <Mail className="w-5 h-5" />
+                      Send Login Link
+                    </>
+                  )}
+                </button>
+              </form>
+
+              <div className="relative">
+                <div className="absolute inset-0 flex items-center">
+                  <div className="w-full border-t border-white/5"></div>
+                </div>
+                <div className="relative flex justify-center text-[10px] uppercase tracking-widest">
+                  <span className="bg-[#0a0a0a] px-4 text-zinc-600">Or continue with</span>
+                </div>
+              </div>
+
+              <button 
+                onClick={handleLogin}
+                className="w-full flex items-center justify-center gap-3 py-4 bg-white text-black rounded-2xl font-bold hover:bg-zinc-200 transition-all active:scale-95"
+              >
+                <LogIn className="w-5 h-5" />
+                Google Account
+              </button>
+            </div>
+          )}
+          
+          <p className="text-[10px] text-zinc-600">
+            By signing in, you agree to our Terms of Service and Privacy Policy.
+          </p>
         </motion.div>
       </div>
     );
@@ -419,7 +590,8 @@ function Dashboard() {
 
             <button 
               onClick={toggleBot}
-              className={`flex items-center gap-2 px-4 py-2 rounded-xl font-medium transition-all active:scale-95 ${
+              disabled={userRole !== 'admin'}
+              className={`flex items-center gap-2 px-4 py-2 rounded-xl font-medium transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed ${
                 isBotRunning 
                 ? 'bg-red-500/10 text-red-400 hover:bg-red-500/20 border border-red-500/20' 
                 : 'bg-emerald-500 text-black hover:bg-emerald-400 shadow-[0_0_20px_rgba(16,185,129,0.2)]'
