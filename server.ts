@@ -197,16 +197,24 @@ async function startServer() {
 
     socket.on("toggle_bot", async (data: { status: boolean, token: string }) => {
       console.log("Received toggle_bot request", { status: data.status });
-      addLog(`Received toggle_bot request: ${data.status}`, "info");
       try {
         const decodedToken = await admin.auth().verifyIdToken(data.token);
         console.log("Token verified for", decodedToken.email);
-        const userDoc = await db.collection("users").doc(decodedToken.uid).get();
         
-        const role = userDoc.exists ? userDoc.data()?.role : null;
-        const isAdmin = role === 'admin' || decodedToken.email === 'helpkeepmymoney@gmail.com';
+        // Primary admin check via email (bypasses Firestore credential requirement)
+        let isAdmin = decodedToken.email === 'helpkeepmymoney@gmail.com';
+        
+        // If not the primary admin, try checking Firestore (may fail if credentials aren't set on Railway)
+        if (!isAdmin) {
+          try {
+            const userDoc = await db.collection("users").doc(decodedToken.uid).get();
+            isAdmin = userDoc.exists && userDoc.data()?.role === 'admin';
+          } catch (dbError) {
+            console.warn("Could not verify admin role via Firestore (missing credentials). Falling back to email check.");
+          }
+        }
 
-        console.log("User role check", { email: decodedToken.email, role, isAdmin });
+        console.log("User role check result:", { email: decodedToken.email, isAdmin });
 
         if (isAdmin) {
           const wasRunning = isBotRunning;
@@ -214,7 +222,6 @@ async function startServer() {
           addLog(`Simulation ${isBotRunning ? "started" : "stopped"} by ${decodedToken.email}`, isBotRunning ? "success" : "warning");
           io.emit("status", { isBotRunning, hasApiKeys });
           
-          // Only start the loop if it wasn't already running
           if (isBotRunning && !wasRunning) {
             runArbitrageLoop();
           }
@@ -224,14 +231,7 @@ async function startServer() {
         }
       } catch (error: any) {
         console.error("Auth error in toggle_bot:", error.code, error.message);
-        
-        // Send the specific error code to the client for debugging
-        const errorMessage = error.code 
-          ? `Authentication failed (${error.code}): ${error.message}` 
-          : "Authentication failed. Please check server logs.";
-        
-        socket.emit("error", errorMessage);
-        addLog(`Auth error: ${error.code || 'unknown'}`, "error");
+        socket.emit("error", `Authentication failed: ${error.message}`);
       }
     });
   });
