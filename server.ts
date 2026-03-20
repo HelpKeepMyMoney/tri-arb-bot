@@ -223,9 +223,16 @@ async function startServer() {
           addLog(`Unauthorized toggle attempt by ${decodedToken.email}`, "error");
         }
       } catch (error: any) {
-        socket.emit("error", "Authentication failed.");
-        console.error("Auth error in toggle_bot:", error);
-        addLog(`Auth error in toggle_bot: ${error.message}`, "error");
+        let errorMessage = "Authentication failed.";
+        if (error.code === 'auth/id-token-expired') {
+          errorMessage = "Session expired. Please sign out and sign back in.";
+        } else if (error.code === 'auth/argument-error') {
+          errorMessage = "Invalid security token. Try refreshing the page.";
+        }
+        
+        socket.emit("error", errorMessage);
+        console.error("Auth error in toggle_bot:", error.code, error.message);
+        addLog(`Auth error (${error.code}): ${error.message}`, "error");
       }
     });
   });
