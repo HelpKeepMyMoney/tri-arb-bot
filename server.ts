@@ -196,18 +196,28 @@ async function startServer() {
     socket.emit("trades_history", successfulTrades);
 
     socket.on("toggle_bot", async (data: { status: boolean, token: string }) => {
+      console.log("Received toggle_bot request", { status: data.status });
+      addLog(`Received toggle_bot request: ${data.status}`, "info");
       try {
         const decodedToken = await admin.auth().verifyIdToken(data.token);
+        console.log("Token verified for", decodedToken.email);
         const userDoc = await db.collection("users").doc(decodedToken.uid).get();
         
         const role = userDoc.exists ? userDoc.data()?.role : null;
         const isAdmin = role === 'admin' || decodedToken.email === 'helpkeepmymoney@gmail.com';
 
+        console.log("User role check", { email: decodedToken.email, role, isAdmin });
+
         if (isAdmin) {
+          const wasRunning = isBotRunning;
           isBotRunning = data.status;
-          addLog(`Simulation ${isBotRunning ? "started" : "stopped"}`, isBotRunning ? "success" : "warning");
+          addLog(`Simulation ${isBotRunning ? "started" : "stopped"} by ${decodedToken.email}`, isBotRunning ? "success" : "warning");
           io.emit("status", { isBotRunning, hasApiKeys });
-          if (isBotRunning) runArbitrageLoop();
+          
+          // Only start the loop if it wasn't already running
+          if (isBotRunning && !wasRunning) {
+            runArbitrageLoop();
+          }
         } else {
           socket.emit("error", "Unauthorized: Only administrators can control the bot.");
           addLog(`Unauthorized toggle attempt by ${decodedToken.email}`, "error");
@@ -215,6 +225,7 @@ async function startServer() {
       } catch (error: any) {
         socket.emit("error", "Authentication failed.");
         console.error("Auth error in toggle_bot:", error);
+        addLog(`Auth error in toggle_bot: ${error.message}`, "error");
       }
     });
   });

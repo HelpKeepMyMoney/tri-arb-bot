@@ -300,6 +300,7 @@ function Dashboard() {
     }
 
     const unsubscribeAuth = onAuthStateChanged(auth, async (user) => {
+      console.log("Auth state changed", { user });
       setUser(user);
       if (user) {
         // Fetch or create user document
@@ -308,10 +309,13 @@ function Dashboard() {
           const userDoc = await getDoc(userDocRef);
           
           if (userDoc.exists()) {
-            setUserRole(userDoc.data().role);
+            const role = userDoc.data().role;
+            console.log("User role fetched", { role });
+            setUserRole(role);
           } else {
             // Default admin check
             const role = user.email === 'helpkeepmymoney@gmail.com' ? 'admin' : 'viewer';
+            console.log("Creating new user document", { role });
             await setDoc(userDocRef, {
               email: user.email,
               displayName: user.displayName || user.email?.split('@')[0] || 'User',
@@ -337,6 +341,14 @@ function Dashboard() {
     const socket = io();
     socketRef.current = socket;
 
+    socket.on('connect', () => {
+      console.log("Socket connected", socket.id);
+    });
+
+    socket.on('disconnect', (reason) => {
+      console.warn("Socket disconnected", reason);
+    });
+
     socket.on('status', (data: { isBotRunning: boolean, hasApiKeys: boolean }) => {
       setIsBotRunning(data.isBotRunning);
       setHasApiKeys(data.hasApiKeys);
@@ -344,6 +356,11 @@ function Dashboard() {
 
     socket.on('logs', (data: Log[]) => {
       setLogs(data);
+    });
+
+    socket.on('error', (message: string) => {
+      console.error("Socket Error:", message);
+      setStorageError(`Server Error: ${message}`);
     });
 
     socket.on('log', (log: Log) => {
@@ -388,9 +405,14 @@ function Dashboard() {
   }, [user]);
 
   const toggleBot = useCallback(async () => {
-    if (!user) return;
+    console.log("toggleBot clicked", { user, isBotRunning });
+    if (!user) {
+      console.warn("No user found, cannot toggle bot.");
+      return;
+    }
     try {
       const token = await user.getIdToken();
+      console.log("Emitting toggle_bot", { status: !isBotRunning });
       socketRef.current?.emit('toggle_bot', { status: !isBotRunning, token });
     } catch (error) {
       console.error("Failed to toggle bot:", error);
@@ -472,7 +494,7 @@ function Dashboard() {
             <div className="space-y-4 p-6 bg-emerald-500/10 border border-emerald-500/20 rounded-2xl">
               <CheckCircle2 className="w-10 h-10 text-emerald-500 mx-auto" />
               <h2 className="text-lg font-bold text-white">Check your email</h2>
-              <p className="text-zinc-400 text-sm">We've sent a login link to <strong>{email}</strong>. Click the link in your inbox to sign in.</p>
+              <p className="text-zinc-400 text-sm">We've sent your access link for the <strong>Crypto Triangle Arbitrage Trading Bot</strong> to <strong>{email}</strong>.</p>
               <button 
                 onClick={() => setLinkSent(false)}
                 className="text-xs text-zinc-500 hover:text-white transition-colors underline"
