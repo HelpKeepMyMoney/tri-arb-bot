@@ -9,10 +9,22 @@ import admin from "firebase-admin";
 import { getFirestore } from "firebase-admin/firestore";
 import firebaseConfig from "./firebase-applet-config.json";
 
+function buildAdminOptions(): admin.AppOptions {
+  const projectId = firebaseConfig.projectId;
+  const keyJson = process.env.FIREBASE_SERVICE_ACCOUNT_KEY;
+  if (keyJson) {
+    const parsed = JSON.parse(keyJson) as admin.ServiceAccount;
+    return {
+      credential: admin.credential.cert(parsed),
+      projectId,
+    };
+  }
+  // Google Cloud (Cloud Run, etc.): Application Default Credentials
+  return { projectId };
+}
+
 // Initialize Firebase Admin
-const adminApp = admin.initializeApp({
-  projectId: firebaseConfig.projectId,
-});
+const adminApp = admin.initializeApp(buildAdminOptions());
 const db = getFirestore(adminApp, firebaseConfig.firestoreDatabaseId);
 
 async function startServer() {
