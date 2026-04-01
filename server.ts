@@ -461,6 +461,22 @@ async function startServer() {
   httpServer.listen(PORT, "0.0.0.0", () => {
     console.log(`Server running on port ${PORT}`, httpServer.address());
     void runStartupFirestoreTest(db);
+
+    const shutdown = (signal: string) => {
+      console.log(`[Server] ${signal} received, closing HTTP + Socket.IO...`);
+      io.close(() => {
+        httpServer.close(() => {
+          console.log("[Server] Graceful shutdown complete");
+          process.exit(0);
+        });
+      });
+      setTimeout(() => {
+        console.error("[Server] Shutdown timed out");
+        process.exit(1);
+      }, 10_000).unref();
+    };
+    process.on("SIGTERM", () => shutdown("SIGTERM"));
+    process.on("SIGINT", () => shutdown("SIGINT"));
   });
 }
 
