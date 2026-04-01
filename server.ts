@@ -460,6 +460,9 @@ async function startServer() {
 
   httpServer.listen(PORT, "0.0.0.0", () => {
     console.log(`Server running on port ${PORT}`, httpServer.address());
+    console.log(
+      `[Server] Railway: Settings → Networking → Public must forward to port ${PORT} (not 3000). Mismatch causes 502.`
+    );
     void runStartupFirestoreTest(db);
 
     const shutdown = (signal: string) => {
