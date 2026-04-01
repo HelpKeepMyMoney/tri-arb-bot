@@ -50,7 +50,10 @@ const parsedServiceAccountKey = parseServiceAccountKeyRaw(process.env.FIREBASE_S
 function buildAdminOptions(): admin.AppOptions {
   const projectId = firebaseConfig.projectId;
   if (parsedServiceAccountKey.kind === "error") {
-    throw new Error(`FIREBASE_SERVICE_ACCOUNT_KEY ${parsedServiceAccountKey.message}`);
+    console.error(
+      `[Firestore] FIREBASE_SERVICE_ACCOUNT_KEY ${parsedServiceAccountKey.message} — starting without that key (Firestore may fail).`
+    );
+    return { projectId };
   }
   if (parsedServiceAccountKey.kind === "none") {
     return { projectId };
@@ -62,18 +65,40 @@ function buildAdminOptions(): admin.AppOptions {
         "Fix the key or config — mismatched projects cause PERMISSION_DENIED."
     );
   }
-  console.log(`[Firestore] Loaded Admin credential: ${account.client_email}`);
-  return {
-    credential: admin.credential.cert(account),
-    projectId,
-  };
+  try {
+    console.log(`[Firestore] Loaded Admin credential: ${account.client_email}`);
+    return {
+      credential: admin.credential.cert(account),
+      projectId,
+    };
+  } catch (e: unknown) {
+    const m = e instanceof Error ? e.message : String(e);
+    console.error("[Firestore] Could not build credential from key JSON:", m);
+    return { projectId };
+  }
 }
 
-// Initialize Firebase Admin
-const adminApp = admin.initializeApp(buildAdminOptions());
-const db = getFirestore(adminApp, firebaseConfig.firestoreDatabaseId);
+// Bad secrets must not prevent the HTTP server from starting (otherwise Railway returns 502).
+let adminApp: admin.app.App;
+let db: Firestore;
+let firestoreUsesServiceAccountJson = parsedServiceAccountKey.kind === "ok";
+try {
+  adminApp = admin.initializeApp(buildAdminOptions());
+  db = getFirestore(adminApp, firebaseConfig.firestoreDatabaseId);
+} catch (err: unknown) {
+  const msg = err instanceof Error ? err.message : String(err);
+  console.error("[Firebase] Admin SDK init failed — recovering with projectId only:", msg);
+  firestoreUsesServiceAccountJson = false;
+  try {
+    adminApp = admin.apps.length > 0 ? admin.app() : admin.initializeApp({ projectId: firebaseConfig.projectId });
+    db = getFirestore(adminApp, firebaseConfig.firestoreDatabaseId);
+  } catch (err2: unknown) {
+    const m2 = err2 instanceof Error ? err2.message : String(err2);
+    console.error("[Firebase] Fatal: could not initialize after recovery attempt:", m2);
+    process.exit(1);
+  }
+}
 
-const firestoreUsesServiceAccountJson = parsedServiceAccountKey.kind === "ok";
 if (parsedServiceAccountKey.kind === "none") {
   console.warn(
     "[Firestore] FIREBASE_SERVICE_ACCOUNT_KEY is not set. On Railway and most non-GCP hosts, " +
@@ -130,6 +155,11 @@ async function runStartupFirestoreTest(firestore: Firestore) {
 
 async function startServer() {
   const app = express();
+  // Always register first so proxies never hit a mis-ordered catch-all.
+  app.get("/health", (_req, res) => {
+    res.status(200).type("text/plain").send("ok");
+  });
+
   const httpServer = createServer(app);
   const io = new Server(httpServer, {
     cors: {
@@ -362,20 +392,20 @@ async function startServer() {
     });
   });
 
-  // Serve Vite in dev; serve dist on Railway or when NODE_ENV=production. Relying only on NODE_ENV
-  // breaks on Railway if npm does not pass it through to tsx (listen never runs → 502).
-  app.get("/health", (_req, res) => {
-    res.status(200).type("text/plain").send("ok");
-  });
-
+  // Serve `dist` when present unless NODE_ENV=development. Unset NODE_ENV still serves static
+  // (Railway) so we never boot Vite in the container by mistake.
   const distPath = path.resolve(process.cwd(), "dist");
   const distIndex = path.join(distPath, "index.html");
-  // Railway injects multiple RAILWAY_* vars at runtime; do not rely on a single ID being present.
-  const onRailway = Object.keys(process.env).some(
-    (key) => key.startsWith("RAILWAY_") && String(process.env[key] ?? "").length > 0
-  );
-  const useStaticDist =
-    existsSync(distIndex) && (onRailway || process.env.NODE_ENV === "production");
+  const distExists = existsSync(distIndex);
+  const useStaticDist = distExists && process.env.NODE_ENV !== "development";
+
+  console.log("[Server] boot", {
+    NODE_ENV: process.env.NODE_ENV ?? "(unset)",
+    PORT: process.env.PORT ?? "(unset)",
+    cwd: process.cwd(),
+    distExists,
+    useStaticDist,
+  });
 
   if (!useStaticDist) {
     console.log("[Server] Vite dev middleware (no static dist for this mode)");
