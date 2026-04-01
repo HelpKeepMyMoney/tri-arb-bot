@@ -1,0 +1,11 @@
+# Smaller Railpack/Docker context = faster copy + push (registry upload after build).
+.git
+.github
+.cursor
+.vscode
+*.log
+.env
+.env.*
+!.env.example
+coverage
+node_modules
