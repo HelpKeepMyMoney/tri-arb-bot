@@ -370,7 +370,10 @@ async function startServer() {
 
   const distPath = path.resolve(process.cwd(), "dist");
   const distIndex = path.join(distPath, "index.html");
-  const onRailway = Boolean(process.env.RAILWAY_ENVIRONMENT_ID || process.env.RAILWAY_PROJECT_ID);
+  // Railway injects multiple RAILWAY_* vars at runtime; do not rely on a single ID being present.
+  const onRailway = Object.keys(process.env).some(
+    (key) => key.startsWith("RAILWAY_") && String(process.env[key] ?? "").length > 0
+  );
   const useStaticDist =
     existsSync(distIndex) && (onRailway || process.env.NODE_ENV === "production");
 
