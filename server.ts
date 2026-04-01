@@ -6,26 +6,126 @@ import { createServer as createViteServer } from "vite";
 import path from "path";
 import ccxt from "ccxt";
 import admin from "firebase-admin";
-import { getFirestore } from "firebase-admin/firestore";
+import { getFirestore, type Firestore } from "firebase-admin/firestore";
 import firebaseConfig from "./firebase-applet-config.json";
+
+type ParsedServiceAccountKey =
+  | { kind: "none" }
+  | { kind: "error"; message: string }
+  | { kind: "ok"; account: admin.ServiceAccount };
+
+function parseServiceAccountKeyRaw(raw: string | undefined): ParsedServiceAccountKey {
+  if (!raw?.trim()) return { kind: "none" };
+  let s = raw.trim();
+  if (s.startsWith("%7B")) {
+    try {
+      s = decodeURIComponent(s);
+    } catch {
+      /* ignore */
+    }
+  }
+  let account: admin.ServiceAccount;
+  try {
+    account = JSON.parse(s) as admin.ServiceAccount;
+  } catch {
+    try {
+      account = JSON.parse(Buffer.from(s, "base64").toString("utf8")) as admin.ServiceAccount;
+    } catch {
+      return {
+        kind: "error",
+        message:
+          "is set but is not valid JSON (or base64-wrapped JSON). Re-paste the full key as one line.",
+      };
+    }
+  }
+  if (!account.private_key || !account.client_email) {
+    return { kind: "error", message: "JSON must include private_key and client_email" };
+  }
+  return { kind: "ok", account };
+}
+
+const parsedServiceAccountKey = parseServiceAccountKeyRaw(process.env.FIREBASE_SERVICE_ACCOUNT_KEY);
 
 function buildAdminOptions(): admin.AppOptions {
   const projectId = firebaseConfig.projectId;
-  const keyJson = process.env.FIREBASE_SERVICE_ACCOUNT_KEY;
-  if (keyJson) {
-    const parsed = JSON.parse(keyJson) as admin.ServiceAccount;
-    return {
-      credential: admin.credential.cert(parsed),
-      projectId,
-    };
+  if (parsedServiceAccountKey.kind === "error") {
+    throw new Error(`FIREBASE_SERVICE_ACCOUNT_KEY ${parsedServiceAccountKey.message}`);
   }
-  // Google Cloud (Cloud Run, etc.): Application Default Credentials
-  return { projectId };
+  if (parsedServiceAccountKey.kind === "none") {
+    return { projectId };
+  }
+  const { account } = parsedServiceAccountKey;
+  if (account.project_id && account.project_id !== projectId) {
+    console.error(
+      `[Firestore] Key project_id "${account.project_id}" does not match firebase-applet-config projectId "${projectId}". ` +
+        "Fix the key or config — mismatched projects cause PERMISSION_DENIED."
+    );
+  }
+  console.log(`[Firestore] Loaded Admin credential: ${account.client_email}`);
+  return {
+    credential: admin.credential.cert(account),
+    projectId,
+  };
 }
 
 // Initialize Firebase Admin
 const adminApp = admin.initializeApp(buildAdminOptions());
 const db = getFirestore(adminApp, firebaseConfig.firestoreDatabaseId);
+
+const firestoreUsesServiceAccountJson = parsedServiceAccountKey.kind === "ok";
+if (parsedServiceAccountKey.kind === "none") {
+  console.warn(
+    "[Firestore] FIREBASE_SERVICE_ACCOUNT_KEY is not set. On Railway and most non-GCP hosts, " +
+      "Firestore writes will fail with PERMISSION_DENIED. Add the JSON key from Firebase Console → " +
+      "Project settings → Service accounts → Generate new private key (set as a single-line variable)."
+  );
+}
+
+/** Same DB + `.add()` shape as real hits; separate collection so the UI history stays clean. */
+const STARTUP_FIRESTORE_TEST_COLLECTION = "startup_firestore_tests";
+
+async function runStartupFirestoreTest(firestore: Firestore) {
+  const dbId = firebaseConfig.firestoreDatabaseId;
+  const payload = {
+    isStartupTest: true,
+    profit: 0,
+    profitPercent: 0,
+    timestamp: new Date().toISOString(),
+    details: {
+      note: "Server startup Firestore write check (same path as arbitrage_hits.add)",
+      nodeEnv: process.env.NODE_ENV ?? "undefined",
+    },
+  };
+
+  try {
+    await firestore.collection("arbitrage_hits").limit(1).get();
+    console.log(`[Firestore] Startup read OK (database "${dbId}")`);
+  } catch (e: any) {
+    console.error(`[Firestore] Startup read failed [${e?.code}]:`, e?.message);
+  }
+
+  try {
+    const ref = await firestore.collection(STARTUP_FIRESTORE_TEST_COLLECTION).add(payload);
+    console.log(
+      `[Firestore] Startup test record written OK — collection "${STARTUP_FIRESTORE_TEST_COLLECTION}" doc "${ref.id}" (database "${dbId}")`
+    );
+  } catch (e: any) {
+    console.error(`[Firestore] Startup test write failed [${e?.code}]:`, e?.message);
+    if (!firestoreUsesServiceAccountJson) {
+      console.error(
+        '[Firestore] No valid service account JSON was loaded (see warnings above). ' +
+          "Railway must set FIREBASE_SERVICE_ACCOUNT_KEY for this database."
+      );
+    } else {
+      console.error(
+        "[Firestore] If this is PERMISSION_DENIED with a key set: confirm Railway attached the variable to this service, " +
+          "regenerate the key, or add role Cloud Datastore User to this service account for project " +
+          firebaseConfig.projectId +
+          "."
+      );
+    }
+  }
+}
 
 async function startServer() {
   const app = express();
@@ -100,7 +200,16 @@ async function startServer() {
         await executeTrade(trade);
       }
     } catch (error: any) {
-      addLog(`Error recording trade: ${error.message}`, "error");
+      const msg = String(error?.message || error);
+      const hint =
+        /PERMISSION_DENIED|insufficient permissions/i.test(msg) && !firestoreUsesServiceAccountJson
+          ? " Configure FIREBASE_SERVICE_ACCOUNT_KEY on the host (service account needs Cloud Datastore User or Editor on this project)."
+          : /PERMISSION_DENIED|insufficient permissions/i.test(msg)
+            ? " Check the service account has Firestore access for database \"" +
+              firebaseConfig.firestoreDatabaseId +
+              "\"."
+            : "";
+      addLog(`Error recording trade: ${msg}${hint}`, "error");
     }
   };
 
@@ -265,6 +374,7 @@ async function startServer() {
 
   httpServer.listen(PORT, "0.0.0.0", () => {
     console.log(`Server running on http://localhost:${PORT}`);
+    void runStartupFirestoreTest(db);
   });
 }
 
