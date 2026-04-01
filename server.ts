@@ -4,6 +4,7 @@ import { createServer } from "http";
 import { Server } from "socket.io";
 import { createServer as createViteServer } from "vite";
 import path from "path";
+import { existsSync } from "fs";
 import ccxt from "ccxt";
 import admin from "firebase-admin";
 import { getFirestore, type Firestore } from "firebase-admin/firestore";
@@ -136,7 +137,11 @@ async function startServer() {
     },
   });
 
-  const PORT = Number(process.env.PORT) || 3000;
+  const rawPort = process.env.PORT;
+  const PORT =
+    rawPort !== undefined && rawPort !== "" && /^\d+$/.test(rawPort)
+      ? parseInt(rawPort, 10)
+      : 3000;
 
   // Initialize Exchange (Phemex)
   const exchange = new ccxt.phemex({
@@ -357,18 +362,30 @@ async function startServer() {
     });
   });
 
-  // Vite middleware for development
-  if (process.env.NODE_ENV !== "production") {
+  // Serve Vite in dev; serve dist on Railway or when NODE_ENV=production. Relying only on NODE_ENV
+  // breaks on Railway if npm does not pass it through to tsx (listen never runs → 502).
+  app.get("/health", (_req, res) => {
+    res.status(200).type("text/plain").send("ok");
+  });
+
+  const distPath = path.resolve(process.cwd(), "dist");
+  const distIndex = path.join(distPath, "index.html");
+  const onRailway = Boolean(process.env.RAILWAY_ENVIRONMENT_ID || process.env.RAILWAY_PROJECT_ID);
+  const useStaticDist =
+    existsSync(distIndex) && (onRailway || process.env.NODE_ENV === "production");
+
+  if (!useStaticDist) {
+    console.log("[Server] Vite dev middleware (no static dist for this mode)");
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: "spa",
     });
     app.use(vite.middlewares);
   } else {
-    const distPath = path.join(process.cwd(), "dist");
+    console.log(`[Server] Serving static app from ${distPath}`);
     app.use(express.static(distPath));
     app.get("*", (req, res) => {
-      res.sendFile(path.join(distPath, "index.html"));
+      res.sendFile(distIndex);
     });
   }
 
@@ -378,4 +395,7 @@ async function startServer() {
   });
 }
 
-startServer();
+startServer().catch((err) => {
+  console.error("[Server] Fatal startup error:", err);
+  process.exit(1);
+});
