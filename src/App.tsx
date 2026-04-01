@@ -338,7 +338,10 @@ function Dashboard() {
   }, []);
 
   useEffect(() => {
-    const socket = io();
+    const socket = io({
+      path: "/socket.io/",
+      transports: ["websocket", "polling"],
+    });
     socketRef.current = socket;
 
     socket.on('connect', () => {

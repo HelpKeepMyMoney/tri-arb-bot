@@ -5,10 +5,21 @@ import { Server } from "socket.io";
 import { createServer as createViteServer } from "vite";
 import path from "path";
 import { existsSync } from "fs";
+import { fileURLToPath } from "node:url";
 import ccxt from "ccxt";
 import admin from "firebase-admin";
 import { getFirestore, type Firestore } from "firebase-admin/firestore";
 import firebaseConfig from "./firebase-applet-config.json";
+
+process.on("unhandledRejection", (reason) => {
+  console.error("[process] unhandledRejection:", reason);
+});
+process.on("uncaughtException", (err) => {
+  console.error("[process] uncaughtException:", err);
+});
+
+/** Dist lives next to server.ts (not process.cwd()), so hosting still works if cwd differs. */
+const SERVER_DIR = path.dirname(fileURLToPath(import.meta.url));
 
 type ParsedServiceAccountKey =
   | { kind: "none" }
@@ -155,6 +166,7 @@ async function runStartupFirestoreTest(firestore: Firestore) {
 
 async function startServer() {
   const app = express();
+  app.set("trust proxy", 1);
   // Always register first so proxies never hit a mis-ordered catch-all.
   app.get("/health", (_req, res) => {
     res.status(200).type("text/plain").send("ok");
@@ -394,7 +406,7 @@ async function startServer() {
 
   // Serve `dist` when present unless NODE_ENV=development. Unset NODE_ENV still serves static
   // (Railway) so we never boot Vite in the container by mistake.
-  const distPath = path.resolve(process.cwd(), "dist");
+  const distPath = path.join(SERVER_DIR, "dist");
   const distIndex = path.join(distPath, "index.html");
   const distExists = existsSync(distIndex);
   const useStaticDist = distExists && process.env.NODE_ENV !== "development";
@@ -403,6 +415,8 @@ async function startServer() {
     NODE_ENV: process.env.NODE_ENV ?? "(unset)",
     PORT: process.env.PORT ?? "(unset)",
     cwd: process.cwd(),
+    serverDir: SERVER_DIR,
+    distPath,
     distExists,
     useStaticDist,
   });
@@ -416,14 +430,36 @@ async function startServer() {
     app.use(vite.middlewares);
   } else {
     console.log(`[Server] Serving static app from ${distPath}`);
-    app.use(express.static(distPath));
-    app.get("*", (req, res) => {
-      res.sendFile(distIndex);
+    app.use(
+      express.static(distPath, {
+        fallthrough: true,
+        index: ["index.html"],
+        etag: true,
+      })
+    );
+    // SPA fallback (avoid Express `*` path quirks); Engine.IO runs before this stack for /socket.io/*
+    app.use((req, res, next) => {
+      if (req.method !== "GET" && req.method !== "HEAD") {
+        return next();
+      }
+      res.sendFile(distIndex, (err) => {
+        if (err) next(err);
+      });
     });
   }
 
+  app.use((err: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+    console.error("[Server] Route error:", err instanceof Error ? err.message : err);
+    if (!res.headersSent) {
+      res.status(500).type("text/plain").send("Internal Server Error");
+    }
+  });
+
+  httpServer.keepAliveTimeout = 75_000;
+  httpServer.headersTimeout = 76_000;
+
   httpServer.listen(PORT, "0.0.0.0", () => {
-    console.log(`Server running on http://localhost:${PORT}`);
+    console.log(`Server running on port ${PORT}`, httpServer.address());
     void runStartupFirestoreTest(db);
   });
 }
