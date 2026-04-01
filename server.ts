@@ -136,7 +136,7 @@ async function startServer() {
     },
   });
 
-  const PORT = 3000;
+  const PORT = Number(process.env.PORT) || 3000;
 
   // Initialize Exchange (Phemex)
   const exchange = new ccxt.phemex({
