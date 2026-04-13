@@ -769,7 +769,7 @@ function Dashboard() {
               </div>
               <div className="p-3 bg-black/40 rounded-xl border border-white/5">
                 <div className="text-[10px] text-zinc-500 uppercase mb-1">Min. Profit Threshold</div>
-                <div className="text-sm font-medium">0.10%</div>
+                <div className="text-sm font-medium">0.40%</div>
               </div>
               <div className="pt-2">
                 <div className="flex items-center gap-2 p-3 rounded-xl bg-emerald-500/5 border border-emerald-500/10 text-emerald-200/70 text-[11px] leading-relaxed">

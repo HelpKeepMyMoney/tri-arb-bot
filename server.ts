@@ -260,6 +260,9 @@ async function startServer() {
     }
   };
 
+  /** Minimum gross profit % to record an opportunity (matches UI “Min. Profit Threshold”). */
+  const MIN_PROFIT_THRESHOLD_PERCENT = 0.4;
+
   // Arbitrage Logic
   const runArbitrageLoop = async () => {
     if (!isBotRunning) return;
@@ -343,7 +346,7 @@ async function startServer() {
         opportunity
       });
 
-      if (profitPercent > 0.05) { // Lowered threshold for recording to 0.05%
+      if (profitPercent > MIN_PROFIT_THRESHOLD_PERCENT) {
         addLog(`Arbitrage opportunity detected! Profit: ${profitPercent.toFixed(4)}%`, "success");
         await addTrade(opportunity);
       }
