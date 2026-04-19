@@ -46,7 +46,7 @@ npm start
 
 - **Firestore History:** lists recent hits from Firestore with **date and time** (locale-formatted) per row. Use **Simulate** to open the trade calculator for that hit.
 - **Live Activity:** server log stream with **date and time** on each line.
-- **Trade Simulator modal:** shows the selected hit’s **timestamp** in the header area. The main content (amount, execution steps, net result) **scrolls** inside the modal when it is tall, while the header and close action stay visible.
+- **Trade Simulator modal:** shows the selected hit’s **timestamp** in the header area. The main content (amount, execution steps, net result) **scrolls** inside the modal when it is tall, while the header and close action stay visible. **Net Simulation Result** is shown in **USD** (converted from net BTC using the hit’s **BTC/USDT** price), with the net **BTC** amount shown underneath; if that price is missing, only BTC is shown.
 
 ## Scripts
 

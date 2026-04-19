@@ -888,6 +888,9 @@ function Dashboard() {
                     const step3_btc = step2_usdt / (prices['BTC/USDT'] || 1) * (1 - fee);
                     const netProfit = step3_btc - simulationAmount;
                     const netProfitPercent = (netProfit / simulationAmount) * 100;
+                    const btcUsdt = prices['BTC/USDT'];
+                    const netProfitUsd =
+                      typeof btcUsdt === 'number' && btcUsdt > 0 ? netProfit * btcUsdt : null;
 
                     return (
                       <div className="space-y-2">
@@ -908,14 +911,25 @@ function Dashboard() {
                         </div>
 
                         <div className="mt-6 p-6 bg-emerald-500/5 border border-emerald-500/20 rounded-2xl">
-                          <div className="flex justify-between items-end">
-                            <div>
+                          <div className="flex justify-between items-end gap-4">
+                            <div className="min-w-0">
                               <div className="text-[10px] text-emerald-500/70 font-bold uppercase mb-1">Net Simulation Result</div>
-                              <div className={`text-3xl font-mono font-bold tracking-tighter ${netProfit >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                                {netProfit >= 0 ? '+' : ''}{netProfit.toFixed(8)} BTC
-                              </div>
+                              {netProfitUsd != null ? (
+                                <>
+                                  <div className={`text-3xl font-mono font-bold tracking-tighter ${netProfit >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                                    {new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(netProfitUsd)}
+                                  </div>
+                                  <div className={`text-sm font-mono mt-1 ${netProfit >= 0 ? 'text-emerald-400/80' : 'text-red-400/80'}`}>
+                                    {netProfit >= 0 ? '+' : ''}{netProfit.toFixed(8)} BTC
+                                  </div>
+                                </>
+                              ) : (
+                                <div className={`text-3xl font-mono font-bold tracking-tighter ${netProfit >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                                  {netProfit >= 0 ? '+' : ''}{netProfit.toFixed(8)} BTC
+                                </div>
+                              )}
                             </div>
-                            <div className={`text-xl font-mono font-bold ${netProfit >= 0 ? 'text-emerald-500' : 'text-red-500'}`}>
+                            <div className={`text-xl font-mono font-bold shrink-0 ${netProfit >= 0 ? 'text-emerald-500' : 'text-red-500'}`}>
                               {netProfitPercent.toFixed(4)}%
                             </div>
                           </div>
