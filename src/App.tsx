@@ -78,6 +78,20 @@ interface Opportunity {
   };
 }
 
+function formatDateTime(iso: string | undefined): string {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '—';
+  return d.toLocaleString(undefined, {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  });
+}
+
 interface TickerUpdate {
   pairs: Record<string, TickerData>;
   opportunity: Opportunity;
@@ -185,8 +199,8 @@ const LogItem = React.memo(({ log }: { log: Log }) => {
 
   return (
     <div className="flex gap-3 text-[11px] group">
-      <span className="text-zinc-600 font-mono shrink-0">
-        {log.timestamp ? new Date(log.timestamp).toLocaleTimeString([], { hour12: false }) : '--:--:--'}
+      <span className="text-zinc-600 font-mono shrink-0 whitespace-nowrap">
+        {log.timestamp ? formatDateTime(log.timestamp) : '—'}
       </span>
       <div className="mt-0.5 shrink-0">{icon}</div>
       <span className={`break-words ${log.type === 'error' ? 'text-red-400' : log.type === 'success' ? 'text-emerald-400' : 'text-zinc-300'}`}>
@@ -202,8 +216,8 @@ const TradeRow = React.memo(({ trade, onSimulate }: { trade: Opportunity; onSimu
     animate={{ opacity: 1, y: 0 }}
     className="group hover:bg-white/[0.02] transition-colors"
   >
-    <td className="py-4 text-xs font-mono text-zinc-400">
-      {trade.timestamp ? new Date(trade.timestamp).toLocaleTimeString() : 'N/A'}
+    <td className="py-4 text-xs font-mono text-zinc-400 whitespace-nowrap">
+      {trade.timestamp ? formatDateTime(trade.timestamp) : 'N/A'}
     </td>
     <td className="py-4 text-xs text-center">
       <span className="px-2 py-0.5 rounded bg-zinc-800 text-zinc-400 border border-white/5">BTC → ETH → USDT → BTC</span>
@@ -735,7 +749,7 @@ function Dashboard() {
                   </AnimatePresence>
                   {memoizedTradesHistory.length === 0 && (
                     <tr>
-                      <td colSpan={4} className="py-12 text-center text-zinc-600 text-xs italic">
+                      <td colSpan={5} className="py-12 text-center text-zinc-600 text-xs italic">
                         No profitable opportunities recorded in Firestore yet...
                       </td>
                     </tr>
@@ -822,27 +836,30 @@ function Dashboard() {
               initial={{ opacity: 0, scale: 0.95, y: 20 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.95, y: 20 }}
-              className="relative w-full max-w-lg bg-zinc-900 border border-white/10 rounded-3xl overflow-hidden shadow-2xl"
+              className="relative w-full max-w-lg max-h-[85vh] flex flex-col bg-zinc-900 border border-white/10 rounded-3xl overflow-hidden shadow-2xl"
             >
-              <div className="p-6 border-b border-white/5 flex items-center justify-between bg-zinc-800/50">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 bg-emerald-500/10 rounded-xl flex items-center justify-center border border-emerald-500/20">
+              <div className="p-6 border-b border-white/5 flex items-center justify-between bg-zinc-800/50 shrink-0">
+                <div className="flex items-center gap-3 min-w-0">
+                  <div className="w-10 h-10 bg-emerald-500/10 rounded-xl flex items-center justify-center border border-emerald-500/20 shrink-0">
                     <Calculator className="w-5 h-5 text-emerald-500" />
                   </div>
-                  <div>
+                  <div className="min-w-0">
                     <h2 className="text-lg font-bold text-white">Trade Simulator</h2>
                     <p className="text-[10px] text-zinc-500 uppercase tracking-widest">Phemex Exchange Simulation</p>
+                    <p className="text-[11px] font-mono text-zinc-400 mt-1 truncate" title={formatDateTime(selectedSimulationTrade.timestamp)}>
+                      {formatDateTime(selectedSimulationTrade.timestamp)}
+                    </p>
                   </div>
                 </div>
                 <button 
                   onClick={() => setSelectedSimulationTrade(null)}
-                  className="w-8 h-8 rounded-full bg-white/5 hover:bg-white/10 flex items-center justify-center transition-colors"
+                  className="w-8 h-8 rounded-full bg-white/5 hover:bg-white/10 flex items-center justify-center transition-colors shrink-0"
                 >
                   <X className="w-4 h-4 text-zinc-400" />
                 </button>
               </div>
 
-              <div className="p-6 space-y-6">
+              <div className="flex-1 min-h-0 overflow-y-auto p-6 space-y-6 custom-scrollbar">
                 {/* Input Section */}
                 <div className="space-y-2">
                   <label className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider">Initial BTC Amount</label>
@@ -913,7 +930,7 @@ function Dashboard() {
                 </div>
               </div>
 
-              <div className="p-6 bg-black/20 border-t border-white/5">
+              <div className="p-6 bg-black/20 border-t border-white/5 shrink-0">
                 <button 
                   onClick={() => setSelectedSimulationTrade(null)}
                   className="w-full py-4 bg-white text-black rounded-2xl font-bold hover:bg-zinc-200 transition-all active:scale-95"

@@ -42,6 +42,12 @@ npm start
 
 - **Min. profit threshold:** opportunities are logged and written to Firestore only when gross triangle profit exceeds **0.40%**. The value is defined as `MIN_PROFIT_THRESHOLD_PERCENT` in `server.ts` and should stay in sync with the figure shown in the UI configuration card.
 
+## Dashboard (UI)
+
+- **Firestore History:** lists recent hits from Firestore with **date and time** (locale-formatted) per row. Use **Simulate** to open the trade calculator for that hit.
+- **Live Activity:** server log stream with **date and time** on each line.
+- **Trade Simulator modal:** shows the selected hit’s **timestamp** in the header area. The main content (amount, execution steps, net result) **scrolls** inside the modal when it is tall, while the header and close action stay visible.
+
 ## Scripts
 
 | Script | Description |
